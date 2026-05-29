@@ -1,0 +1,16 @@
+# Sensitive Environment Variables / API Keys
+.env
+
+# Python Cache and Compiled bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary Audio Responses
+jarvis_response_*.mp3
+
+# Virtual Environments (if you ever use one)
+venv/
+.venv/
+env/

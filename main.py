@@ -1,6 +1,7 @@
 import sys
 import threading
 import os
+from dotenv import load_dotenv
 import pyautogui
 import time
 import asyncio
@@ -23,11 +24,14 @@ class GestureOS:
         self.app = QApplication(sys.argv)
         self.hud = JarvisHUD()
         self.automator = Automator()
+
+        load_dotenv()
+
         
         # NVIDIA NIM Setup (Ensure your key starts with nvapi-)
         self.client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
-            api_key="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"
+            api_key="NVIDIA_API_KEY"
         )
         self.model_name = "meta/llama-3.1-8b-instruct"
         
