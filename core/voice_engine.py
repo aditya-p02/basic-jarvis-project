@@ -20,11 +20,10 @@ class VoiceEngine(QThread):
         recognizer = sr.Recognizer()
         sample_rate = 16000
         
-        # 1. INCREASE SENSITIVITY TO IGNORE BACKGROUND NOISE/MEET CALLS
-        VOLUME_THRESHOLD = 400  # Changed from 150 to 400
-        SILENCE_LIMIT = 1.2    
+        VOLUME_THRESHOLD = 500  
+        SILENCE_LIMIT = 0.5    
         
-        print("[SYSTEM] Advanced Audio Stream Online...")
+        print("[SYSTEM] Advanced Audio Stream Online (Cloud Mode)...")
         
         with sd.InputStream(samplerate=sample_rate, channels=1, dtype='int16', callback=self.audio_callback):
             while self.running:
@@ -40,7 +39,7 @@ class VoiceEngine(QThread):
                     
                     if volume > VOLUME_THRESHOLD:
                         if not recording:
-                            print("[SYSTEM] Voice detected. Recording...")
+                            pass
                         recording = True
                         silence_timer = 0
                         audio_buffer.append(chunk)
@@ -62,9 +61,8 @@ class VoiceEngine(QThread):
                         print(f"[USER SAID] {text}")
                         self.command_signal.emit(text)
                         
-                    # 2. PRINT WHEN IT HEARS UNRECOGNIZABLE NOISE
                     except sr.UnknownValueError:
-                        print("[SYSTEM] Audio processed, but no clear words were recognized (Mic conflict or static).")
+                        pass
                     except Exception as e:
                         print(f"[ERROR] Translation Error: {e}")
 

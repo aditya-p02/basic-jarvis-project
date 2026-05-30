@@ -1,36 +1,44 @@
-import os
+import pygame
 import time
-import asyncio
-import threading
-import edge_tts
-from playsound import playsound
+import os
 
 class SpeechEngine:
-    def __init__(self, voice="en-US-AndrewNeural"):
-        self.voice = voice
+    def __init__(self):
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
 
     def speak(self, text, error_callback=None):
-        def run_speak():
-            try:
-                # Strip out any bad quote marks that mess up audio parsing
-                safe_text = text.replace('"', '').replace("'", "")
-                audio_file = f"jarvis_response_{int(time.time())}.mp3"
+        timestamp = int(time.time())
+        file_path = f"jarvis_response_{timestamp}.mp3"
+        try:
+            os.system(f'edge-tts --text "{text}" --write-media {file_path}')
+            self.play_and_clean_audio(file_path)
+        except Exception as e:
+            print(f"[SPEECH GENERATION ERROR] {e}")
+            if error_callback:
+                error_callback()
+
+    def play_and_clean_audio(self, file_path):
+        if not os.path.exists(file_path):
+            print(f"[SPEECH ERROR] Audio file not found: {file_path}")
+            return
+
+        try:
+            pygame.mixer.music.load(file_path)
+            pygame.mixer.music.play()
+            
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.1)
                 
-                async def generate_audio():
-                    communicate = edge_tts.Communicate(safe_text, self.voice)
-                    await communicate.save(audio_file)
-                
-                asyncio.run(generate_audio())
-                
-                if os.path.exists(audio_file):
-                    playsound(audio_file)
-                    try:
-                        os.remove(audio_file)
-                    except Exception:
-                        pass
-            except Exception as e:
-                print(f"[SPEECH ERROR] {e}")
-                if error_callback:
-                    error_callback()
-                
-        threading.Thread(target=run_speak, daemon=True).start()
+        except Exception as e:
+            print(f"[SPEECH ERROR] Playback failed: {e}")
+        finally:
+            pygame.mixer.music.unload()
+            self._delete_file(file_path)
+
+    def _delete_file(self, file_path):
+        try:
+            time.sleep(0.1) 
+            os.remove(file_path)
+        except Exception as e:
+            print(f"[CLEANUP ERROR] Failed to delete {file_path}: {e}")

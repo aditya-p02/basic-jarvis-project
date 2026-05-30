@@ -11,7 +11,6 @@ class CodeExecutor:
 
     def execute(self, python_code):
         stdout_buffer = io.StringIO()
-        # Redirect stdout so anything inside the generated code that uses print() gets captured
         with contextlib.redirect_stdout(stdout_buffer):
             try:
                 global_vars = {

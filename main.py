@@ -1,9 +1,11 @@
 import sys
 import os
 import time
+import asyncio
+import qasync
+from datetime import datetime
 from PyQt5.QtWidgets import QApplication
 
-# Import your newly organized custom modules from the core package
 from core.vision_engine import VisionEngine
 from core.voice_engine import VoiceEngine
 from core.automator import Automator
@@ -15,65 +17,107 @@ from ui.hud import JarvisHUD
 class GestureOS:
     def __init__(self):
         self.app = QApplication(sys.argv)
+        
+        # Unifies the asyncio loop with the PyQt5 event loop
+        self.loop = qasync.QEventLoop(self.app)
+        asyncio.set_event_loop(self.loop)
+        
         self.hud = JarvisHUD()
         self.automator = Automator()
         
-        # Initialize the decoupled functional core engines
         self.speech = SpeechEngine()
         self.brain = AgentBrain()
         self.executor = CodeExecutor(self.automator)
         
-        # Initialize thread engines
         self.vision_thread = VisionEngine()
         self.voice_thread = VoiceEngine()
         
-        # Connect signals to the UI HUD and central processing block
         self.vision_thread.gesture_signal.connect(self.hud.update_action)
         self.voice_thread.status_signal.connect(self.hud.update_status)
         self.voice_thread.command_signal.connect(self.process_command)
+        
+        self.is_awake = False  # JARVIS starts in standby mode
+
+    def _get_time_greeting(self):
+        hour = datetime.now().hour
+        if 5 <= hour < 12:
+            return "Good morning, sir."
+        elif 12 <= hour < 17:
+            return "Good afternoon, sir."
+        elif 17 <= hour < 21:
+            return "Good evening, sir."
+        else:
+            return "Good night, sir."
 
     def process_command(self, cmd):
-        self.hud.update_action(f"CMD: {cmd}")
+        # Safely schedule the asynchronous execution
+        asyncio.ensure_future(self._async_process_command(cmd))
+
+    async def _async_process_command(self, cmd):
+        cmd_lower = cmd.lower()
+        self.hud.update_action(f"HEARD: {cmd}")
         
-        # Core system interrupt handled locally
-        if "shutdown jarvis" in cmd:
-            self.speech.speak("Shutting down core systems. Have a fantastic day!")
+        # --- WAKE WORD LOGIC ---
+        if not self.is_awake:
+            if "wake up" in cmd_lower and "jarvis" in cmd_lower:
+                self.is_awake = True
+                self.hud.update_status("ONLINE")
+                greeting = self._get_time_greeting()
+                await self.loop.run_in_executor(None, self.speech.speak, greeting)
+            return 
+
+        if "go to sleep" in cmd_lower or "standby" in cmd_lower:
+            self.is_awake = False
+            self.hud.update_status("STANDBY")
+            await self.loop.run_in_executor(None, self.speech.speak, "Powering down core cognitive functions. Call if you need me.")
+            return
+            
+        if "shutdown jarvis" in cmd_lower:
+            await self.loop.run_in_executor(None, self.speech.speak, "Shutting down entire system. Have a fantastic day, sir.")
             time.sleep(3) 
             self.shutdown()
             return
+        # -----------------------
 
         self.hud.update_status("Thinking...")
         
         try:
-            # Let the brain process the command using database persistent history
-            generated_code = self.brain.think(cmd)
+            # 1. Run LLM thinking in background (Streaming)
+            generated_code = await self.loop.run_in_executor(None, self.brain.think, cmd)
             print(f"--- [AGENT EXECUTING CODE] ---\n{generated_code}\n------------------------------")
             
             self.hud.update_status("Executing...")
-            # Execute the generated string sequence inside the custom sandbox environment
-            execution_output = self.executor.execute(generated_code)
+            # 2. Run local OS automation code in background
+            execution_output = await self.loop.run_in_executor(None, self.executor.execute, generated_code)
             
-            # Formulate speech response from standard output
-            reply = execution_output.strip() if execution_output.strip() else "Task executed."
+            reply = execution_output.strip() if execution_output.strip() else "I've completed the task, sir."
                 
             self.hud.update_status("Responding...")
-            self.speech.speak(reply, error_callback=lambda: self.hud.update_status("SPEECH ERROR"))
+            print(f"[JARVIS RESPONDS]: {reply}")
             
-            # Wipes session logs if a message sequence successfully finishes execution
-            if "Message dispatched." in reply:
+            # 3. Offload the blocking speech playback to a background thread
+            await self.loop.run_in_executor(None, self.speech.speak, reply)
+            
+            if "Message dispatched" in reply:
                 self.brain.flush_memory()
             
         except Exception as e:
-            self.hud.update_status("Agent Error")
             print(f"[CORE ERROR] {e}")
-            self.speech.speak("I encountered an internal error processing that request.")
+            self.hud.update_status("Agent Error")
+            await self.loop.run_in_executor(None, self.speech.speak, "It appears I've encountered a slight miscalculation in my core logic.")
+        
+        finally:
+            if self.is_awake:
+                self.hud.update_status("LISTENING")
 
     def start(self):
         self.hud.show()
         self.vision_thread.start()
         self.voice_thread.start()
-        self.speech.speak("Agentic core initialized. Awaiting your instructions.")
-        sys.exit(self.app.exec_())
+        self.speech.speak("All systems initialized. I am standing by for your wake word, sir.")
+        
+        with self.loop:
+            self.loop.run_forever()
 
     def shutdown(self):
         self.vision_thread.stop()
