@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Keeps the 3D canvas perfectly fitted and transparent */
+        body { margin: 0; overflow: hidden; background-color: transparent; }
+        canvas { width: 100vw; height: 100vh; display: block; }
+    </style>
+    <script src="three.min.js"></script>
+</head>
+<body>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const coreGroup = new THREE.Group();
+        scene.add(coreGroup);
+
+        // 1. Central Stable Core (Icosahedron)
+        const coreGeo = new THREE.IcosahedronGeometry(1.2, 1);
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, wireframe: true, transparent: true, opacity: 0.6 });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        coreGroup.add(core);
+
+        // 2. Inner Smooth Orbiting Ring
+        const ring1Geo = new THREE.TorusGeometry(1.7, 0.02, 16, 100);
+        const ring1Mat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, transparent: true, opacity: 0.8 });
+        const ring1 = new THREE.Mesh(ring1Geo, ring1Mat);
+        coreGroup.add(ring1);
+
+        // 3. Outer Complex Segmented Ring
+        const ring2Geo = new THREE.TorusGeometry(2.2, 0.06, 4, 60);
+        const ring2Mat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, wireframe: true, transparent: true, opacity: 0.4 });
+        const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+        coreGroup.add(ring2);
+
+        // 4. Background Floating Data Particles
+        const particleGeo = new THREE.BufferGeometry();
+        const particleCount = 300;
+        const posArray = new Float32Array(particleCount * 3);
+        for(let i=0; i<particleCount*3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 10;
+        }
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particleMat = new THREE.PointsMaterial({ size: 0.04, color: 0x00c8ff, transparent: true, opacity: 0.5 });
+        const particles = new THREE.Points(particleGeo, particleMat);
+        scene.add(particles);
+
+        camera.position.z = 5;
+
+        // --- ANIMATION & STATE LOGIC ---
+        let isProcessing = false;
+        let baseSpeed = 0.002;
+        let currentSpeed = baseSpeed;
+        let targetSpeed = baseSpeed;
+
+        // Python will call this function automatically!
+        window.setJarvisState = function(state) {
+            if(state === "LISTENING" || state === "THINKING" || state === "EXECUTING" || state === "RESPONDING") {
+                isProcessing = true;
+                targetSpeed = 0.015; // Smoothly speed up the rings
+                
+                // Change Colors based on state
+                if(state === "LISTENING") coreMat.color.setHex(0xff007f); // Neon Pink
+                else if(state === "RESPONDING") coreMat.color.setHex(0x39ff14); // Neon Green
+                else coreMat.color.setHex(0xffd700); // Gold for thinking/executing
+                
+                ring1Mat.color = coreMat.color;
+                ring2Mat.color = coreMat.color;
+            } else {
+                isProcessing = false;
+                targetSpeed = baseSpeed; // Slow back down to idle
+                coreMat.color.setHex(0x00c8ff); // Back to Cyan
+                ring1Mat.color.setHex(0x00c8ff);
+                ring2Mat.color.setHex(0x00c8ff);
+            }
+        };
+
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.05;
+
+            // Smoothly interpolate speed so it ramps up/down elegantly
+            currentSpeed += (targetSpeed - currentSpeed) * 0.05;
+
+            // Apply rotation across multiple axes
+            core.rotation.x += currentSpeed * 0.8;
+            core.rotation.y += currentSpeed * 1.2;
+            
+            ring1.rotation.x -= currentSpeed * 0.9;
+            ring1.rotation.y += currentSpeed * 0.5;
+
+            ring2.rotation.x += currentSpeed * 0.6;
+            ring2.rotation.y -= currentSpeed * 1.1;
+            ring2.rotation.z += currentSpeed * 0.3;
+
+            particles.rotation.y += currentSpeed * 0.2;
+
+            // Pulse the brightness/opacity when active instead of scaling
+            if (isProcessing) {
+                coreMat.opacity = 0.5 + Math.sin(time * 4) * 0.4; 
+            } else {
+                coreMat.opacity = 0.6;
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+        
+        // Keep it responsive
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>

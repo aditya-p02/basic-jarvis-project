@@ -45,7 +45,7 @@ class VoiceEngine(QThread):
                         audio_buffer.append(chunk)
                     
                     elif recording:
-                        silence_timer += len(chunk) / sample_rate
+                        silence_timer += chunk.shape[0] / sample_rate
                         audio_buffer.append(chunk)
                         
                         if silence_timer > SILENCE_LIMIT:

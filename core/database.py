@@ -2,25 +2,22 @@ import sqlite3
 import sqlite_vec
 import struct
 import os
-from openai import OpenAI
-from dotenv import load_dotenv
-
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(base_dir, ".env"))
+from openai import OpenAI  # ollama uses the openai-compatible client
+import threading
 
 class DatabaseManager:
     def __init__(self, db_path="jarvis.db"):
         self.db_path = db_path
         
-        api_key = os.getenv("NVIDIA_API_KEY")
         self.client = OpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=api_key
+            base_url="http://localhost:11434/v1",
+            api_key="ollama"
         )
-        self.embedding_model = "nvidia/nv-embed-v1" 
+        self.embedding_model = "nomic-embed-text"
         
         self.conn = self._init_db()
-        print("[DATABASE] Semantic memory online (Powered by NVIDIA API).")
+        self._lock = threading.Lock()
+        print("[DATABASE] Semantic memory online (Powered by Ollama / nomic-embed-text).")
 
     def _init_db(self):
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -40,11 +37,11 @@ class DatabaseManager:
         """)
 
         cursor.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS agent_memory USING vec0(
-                id INTEGER PRIMARY KEY,
-                embedding float[1024] 
-            )
-        """)
+        CREATE VIRTUAL TABLE IF NOT EXISTS agent_memory USING vec0(
+        id INTEGER PRIMARY KEY,
+        embedding float[768]
+        )
+    """)
         
         conn.commit()
         return conn
@@ -56,8 +53,7 @@ class DatabaseManager:
         try:
             response = self.client.embeddings.create(
                 input=[text],
-                model=self.embedding_model,
-                extra_body={"input_type": "query", "truncate": "NONE"}
+                model=self.embedding_model
             )
             return response.data[0].embedding
         except Exception as e:
@@ -67,24 +63,31 @@ class DatabaseManager:
     def save_message(self, role, content):
         if not content or not content.strip():
             return
-            
-        cursor = self.conn.cursor()
-        try:
-            cursor.execute(
-                "INSERT INTO memory_logs (role, content) VALUES (?, ?)", 
-                (role, content)
-            )
-            rowid = cursor.lastrowid
-            
-            embedding = self._get_embedding(content)
-            if embedding:
+        
+        with self._lock:
+            cursor = self.conn.cursor()
+            try:
                 cursor.execute(
-                    "INSERT INTO agent_memory (id, embedding) VALUES (?, ?)",
-                    (rowid, self._serialize_f32(embedding))
+                    "INSERT INTO memory_logs (role, content) VALUES (?, ?)", 
+                    (role, content)
                 )
-            self.conn.commit()
-        except Exception as e:
-            print(f"[DATABASE ERROR] {e}")
+                rowid = cursor.lastrowid
+            
+                embedding = self._get_embedding(content)
+                if embedding:
+                    cursor.execute(
+                        "INSERT INTO agent_memory (id, embedding) VALUES (?, ?)",
+                        (rowid, self._serialize_f32(embedding))
+                    )
+                self.conn.commit()
+            except Exception as e:
+                print(f"[DATABASE ERROR] {e}")
+
+    def save_code_summary(self, code):
+        """Store a short summary instead of full code for assistant turns."""
+        lines = [l.strip() for l in code.strip().splitlines() if l.strip()]
+        summary = f"[Executed {len(lines)}-line Python script. First action: {lines[0] if lines else 'none'}]"
+        self.save_message("assistant", summary)    
 
     def get_recent_context(self, limit=10):
         cursor = self.conn.cursor()
@@ -97,6 +100,8 @@ class DatabaseManager:
         return [{"role": row[0], "content": row[1]} for row in rows]
         
     def wipe_short_term_memory(self):
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM memory_logs")
-        self.conn.commit()
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute("DELETE FROM memory_logs")
+            cursor.execute("DELETE FROM agent_memory")
+            self.conn.commit()

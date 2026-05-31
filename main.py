@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 import qasync
+import random
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication
 
@@ -17,25 +18,25 @@ from ui.hud import JarvisHUD
 class GestureOS:
     def __init__(self):
         self.app = QApplication(sys.argv)
-        
+
         # Unifies the asyncio loop with the PyQt5 event loop
         self.loop = qasync.QEventLoop(self.app)
         asyncio.set_event_loop(self.loop)
-        
+
         self.hud = JarvisHUD()
         self.automator = Automator()
-        
+
         self.speech = SpeechEngine()
         self.brain = AgentBrain()
         self.executor = CodeExecutor(self.automator)
-        
+
         self.vision_thread = VisionEngine()
         self.voice_thread = VoiceEngine()
-        
+
         self.vision_thread.gesture_signal.connect(self.hud.update_action)
         self.voice_thread.status_signal.connect(self.hud.update_status)
         self.voice_thread.command_signal.connect(self.process_command)
-        
+
         self.is_awake = False  # JARVIS starts in standby mode
 
     def _get_time_greeting(self):
@@ -56,7 +57,7 @@ class GestureOS:
     async def _async_process_command(self, cmd):
         cmd_lower = cmd.lower()
         self.hud.update_action(f"HEARD: {cmd}")
-        
+
         # --- WAKE WORD LOGIC ---
         if not self.is_awake:
             if "wake up" in cmd_lower and "jarvis" in cmd_lower:
@@ -64,49 +65,57 @@ class GestureOS:
                 self.hud.update_status("ONLINE")
                 greeting = self._get_time_greeting()
                 await self.loop.run_in_executor(None, self.speech.speak, greeting)
-            return 
+            return
 
         if "go to sleep" in cmd_lower or "standby" in cmd_lower:
             self.is_awake = False
             self.hud.update_status("STANDBY")
             await self.loop.run_in_executor(None, self.speech.speak, "Powering down core cognitive functions. Call if you need me.")
             return
-            
+
         if "shutdown jarvis" in cmd_lower:
             await self.loop.run_in_executor(None, self.speech.speak, "Shutting down entire system. Have a fantastic day, sir.")
-            time.sleep(3) 
+            await asyncio.sleep(3)
             self.shutdown()
             return
         # -----------------------
 
         self.hud.update_status("Thinking...")
-        
+
+        # Instant acknowledgment — fires while Groq generates code simultaneously
+        quick_replies = [
+            "Right away, sir.",
+            "On it.",
+            "Processing that now, boss.",
+            "Just a moment.",
+            "Executing."
+        ]
+        chosen_reply = random.choice(quick_replies)
+        self.loop.run_in_executor(None, self.speech.speak, chosen_reply)
+
         try:
-            # 1. Run LLM thinking in background (Streaming)
+            # Groq generates the automation code
             generated_code = await self.loop.run_in_executor(None, self.brain.think, cmd)
             print(f"--- [AGENT EXECUTING CODE] ---\n{generated_code}\n------------------------------")
-            
+
             self.hud.update_status("Executing...")
-            # 2. Run local OS automation code in background
             execution_output = await self.loop.run_in_executor(None, self.executor.execute, generated_code)
-            
+
             reply = execution_output.strip() if execution_output.strip() else "I've completed the task, sir."
-                
+
             self.hud.update_status("Responding...")
             print(f"[JARVIS RESPONDS]: {reply}")
-            
-            # 3. Offload the blocking speech playback to a background thread
+
             await self.loop.run_in_executor(None, self.speech.speak, reply)
-            
-            if "Message dispatched" in reply:
-                self.brain.flush_memory()
-            
+
         except Exception as e:
             print(f"[CORE ERROR] {e}")
             self.hud.update_status("Agent Error")
             await self.loop.run_in_executor(None, self.speech.speak, "It appears I've encountered a slight miscalculation in my core logic.")
-        
+
         finally:
+            # Always flush memory after every task so JARVIS never mixes up contexts
+            self.brain.flush_memory()
             if self.is_awake:
                 self.hud.update_status("LISTENING")
 
@@ -115,7 +124,7 @@ class GestureOS:
         self.vision_thread.start()
         self.voice_thread.start()
         self.speech.speak("All systems initialized. I am standing by for your wake word, sir.")
-        
+
         with self.loop:
             self.loop.run_forever()
 

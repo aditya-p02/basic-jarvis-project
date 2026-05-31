@@ -23,10 +23,18 @@ class Automator:
 
     def open_any_app(self, app_name):
         try:
-            open_app(app_name, match_closest=True) 
-        except: pass
+            open_app(app_name, match_closest=True)
+            print(f"[AUTOMATOR] Opened '{app_name}' successfully.")
+            return True
+        except Exception as e:
+            print(f"[AUTOMATOR ERROR] Failed to open '{app_name}': {e}")
+            return False
 
     def close_any_app(self, app_name):
         try:
             close_app(app_name, match_closest=True)
-        except: pass
+            print(f"[AUTOMATOR] Closed '{app_name}' successfully.")
+            return True
+        except Exception as e:
+            print(f"[AUTOMATOR ERROR] Failed to close '{app_name}': {e}")
+            return False

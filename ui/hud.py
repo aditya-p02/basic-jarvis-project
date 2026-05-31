@@ -1,108 +1,84 @@
-import math
-import random
+import os
 from PyQt5.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget, QApplication
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont
-
-class NervousSystemWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.nodes = []
-        self.num_nodes = 45 
-        self.time = 0.0
-        self.state_color = QColor(0, 255, 204) # Default Cyan
-        
-        for _ in range(self.num_nodes):
-            x = random.uniform(50, 550)
-            y = random.uniform(50, 550)
-            phase = random.uniform(0, math.pi * 2)
-            speed = random.uniform(0.05, 0.12)
-            self.nodes.append({'x': x, 'y': y, 'base_x': x, 'base_y': y, 'phase': phase, 'speed': speed})
-            
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_animation)
-        self.timer.start(30)
-
-    def update_animation(self):
-        self.time += 1.0
-        for node in self.nodes:
-            node['x'] = node['base_x'] + math.sin(self.time * node['speed'] + node['phase']) * 20
-            node['y'] = node['base_y'] + math.cos(self.time * node['speed'] + node['phase']) * 20
-        self.update() 
-
-    def set_state(self, state_text):
-        text = state_text.upper()
-        if "LISTENING" in text:
-            self.state_color = QColor(255, 0, 127) # Neon Pink
-        elif "THINKING" in text or "EXECUTING" in text:
-            self.state_color = QColor(255, 215, 0) # Gold
-        elif "RESPONDING" in text:
-            self.state_color = QColor(57, 255, 20) # Neon Green
-        else:
-            self.state_color = QColor(0, 255, 204) # Cyan
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        pen = QPen()
-        for i in range(self.num_nodes):
-            for j in range(i + 1, self.num_nodes):
-                n1 = self.nodes[i]
-                n2 = self.nodes[j]
-                
-                dist = math.hypot(n1['x'] - n2['x'], n1['y'] - n2['y'])
-                
-                if dist < 120: 
-                    opacity = int(255 * (1 - dist / 120))
-                    c = QColor(self.state_color)
-                    c.setAlpha(opacity)
-                    pen.setColor(c)
-                    pen.setWidthF(1.5)
-                    painter.setPen(pen)
-                    painter.drawLine(int(n1['x']), int(n1['y']), int(n2['x']), int(n2['y']))
-                    
-        painter.setPen(Qt.NoPen)
-        for node in self.nodes:
-            c = QColor(self.state_color)
-            alpha = int(150 + 100 * math.sin(self.time * node['speed'] * 2 + node['phase']))
-            c.setAlpha(max(0, min(255, alpha)))
-            painter.setBrush(c)
-            painter.drawEllipse(int(node['x'] - 4), int(node['y'] - 4), 8, 8)
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QFont
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 class JarvisHUD(QMainWindow):
     def __init__(self):
         super().__init__()
         
+        # Transparent, frameless window
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(600, 600)
+        self.resize(600, 650)
         self.center_on_screen()
+        
+        self.drag_position = None
 
-        self.central_widget = NervousSystemWidget()
+        # Frosted glass background panel
+        self.central_widget = QWidget()
+        self.central_widget.setStyleSheet("""
+            QWidget {
+                background-color: rgba(10, 15, 30, 210);
+                border-radius: 20px;
+                border: 1px solid rgba(0, 200, 255, 60);
+            }
+        """)
         self.setCentralWidget(self.central_widget)
         
         self.layout = QVBoxLayout(self.central_widget)
         self.layout.setAlignment(Qt.AlignCenter)
 
-        self.title_label = QLabel("GESTURE OS // JARVIS", self)
-        self.title_label.setFont(QFont("Consolas", 18, QFont.Bold))
-        self.title_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        # UI Text Labels
+        self.title_label = QLabel("J.A.R.V.I.S. CORE v8.0", self)
+        self.title_label.setFont(QFont("Consolas", 16, QFont.Bold))
+        self.title_label.setStyleSheet("color: rgba(0, 200, 255, 255); background: transparent; border: none;")
         self.title_label.setAlignment(Qt.AlignCenter)
         
         self.status_label = QLabel("STANDBY", self)
         self.status_label.setFont(QFont("Consolas", 14))
-        self.status_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.status_label.setStyleSheet("color: #FFFFFF; background: transparent; border: none;")
         self.status_label.setAlignment(Qt.AlignCenter)
 
         self.action_label = QLabel("", self)
-        self.action_label.setFont(QFont("Consolas", 12, QFont.Bold))
-        self.action_label.setStyleSheet("color: #FFFFFF; background: transparent;")
+        self.action_label.setFont(QFont("Consolas", 11, QFont.Bold))
+        self.action_label.setStyleSheet("color: rgba(255, 255, 255, 150); background: transparent; border: none;")
         self.action_label.setAlignment(Qt.AlignCenter)
 
+        # ==========================================
+        # 3D WEB ENGINE INJECTION
+        # ==========================================
+        self.web_view = QWebEngineView()
+        # Ensure the web view itself is fully transparent
+        self.web_view.setStyleSheet("background: transparent; border: none;")
+        self.web_view.setAttribute(Qt.WA_TranslucentBackground)
+        self.web_view.page().setBackgroundColor(Qt.transparent)
+        
+        # Point it to the local 3D HTML file we just created
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        html_path = os.path.join(base_dir, "web", "index.html")
+        self.web_view.setUrl(QUrl.fromLocalFile(html_path))
+        
+        # Add elements to layout
         self.layout.addWidget(self.title_label)
         self.layout.addWidget(self.status_label)
+        self.layout.addWidget(self.web_view, 1) # The '1' gives the 3D core max stretch space
         self.layout.addWidget(self.action_label)
+
+    # Allow dragging the frameless window
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.drag_position:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+            
+    def mouseReleaseEvent(self, event):
+        self.drag_position = None
 
     def center_on_screen(self):
         screen = QApplication.primaryScreen().geometry()
@@ -112,7 +88,9 @@ class JarvisHUD(QMainWindow):
 
     def update_status(self, text):
         self.status_label.setText(text)
-        self.central_widget.set_state(text)
+        # CRITICAL: This is where Python talks to Javascript to trigger the 3D animations!
+        js_code = f"window.setJarvisState('{text.upper()}');"
+        self.web_view.page().runJavaScript(js_code)
 
     def update_action(self, text):
         self.action_label.setText(text)
