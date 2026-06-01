@@ -2,122 +2,474 @@
 <html>
 <head>
     <style>
-        /* Keeps the 3D canvas perfectly fitted and transparent */
-        body { margin: 0; overflow: hidden; background-color: transparent; }
-        canvas { width: 100vw; height: 100vh; display: block; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --cyan: #00c8ff;
+            --pink: #ff007f;
+            --green: #39ff14;
+            --gold: #ffd700;
+            --purple: #bf5fff;
+            --bg: rgba(5, 8, 20, 0.95);
+            --border: rgba(0, 200, 255, 0.25);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: transparent;
+            overflow: hidden;
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--cyan);
+        }
+
+        /* ── MAIN LAYOUT ── */
+        #hud-root {
+            width: 100vw;
+            height: 100vh;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            gap: 8px;
+            padding: 12px;
+        }
+
+        /* ── TOP BAR ── */
+        #top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+
+        #title {
+            font-family: 'Orbitron', monospace;
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            color: var(--cyan);
+            text-shadow: 0 0 10px var(--cyan);
+        }
+
+        #clock {
+            font-size: 11px;
+            color: rgba(0, 200, 255, 0.6);
+            letter-spacing: 2px;
+        }
+
+        /* ── MIDDLE: 3D CORE ── */
+        #core-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #status-ring {
+            width: 240px;
+            height: 240px;
+            position: relative;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* State label overlaid on the core */
+        #state-label {
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Orbitron', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--cyan);
+            text-shadow: 0 0 8px var(--cyan);
+            white-space: nowrap;
+            transition: color 0.4s, text-shadow 0.4s;
+        }
+
+        /* ── AGENT STRIP ── */
+        #agent-strip {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 16px;
+        }
+
+        .agent-pill {
+            padding: 3px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 200, 255, 0.2);
+            font-size: 9px;
+            letter-spacing: 1.5px;
+            color: rgba(0, 200, 255, 0.4);
+            background: rgba(0, 200, 255, 0.03);
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .agent-pill.active {
+            border-color: var(--cyan);
+            color: var(--cyan);
+            background: rgba(0, 200, 255, 0.12);
+            box-shadow: 0 0 10px rgba(0, 200, 255, 0.3);
+        }
+
+        .agent-pill.active.pink   { border-color: var(--pink); color: var(--pink); background: rgba(255,0,127,0.12); box-shadow: 0 0 10px rgba(255,0,127,0.3); }
+        .agent-pill.active.green  { border-color: var(--green); color: var(--green); background: rgba(57,255,20,0.12); box-shadow: 0 0 10px rgba(57,255,20,0.3); }
+        .agent-pill.active.gold   { border-color: var(--gold); color: var(--gold); background: rgba(255,215,0,0.12); box-shadow: 0 0 10px rgba(255,215,0,0.3); }
+        .agent-pill.active.purple { border-color: var(--purple); color: var(--purple); background: rgba(191,95,255,0.12); box-shadow: 0 0 10px rgba(191,95,255,0.3); }
+
+        /* ── BOTTOM: STATS + ACTION ── */
+        #bottom-section {
+            border-top: 1px solid var(--border);
+            padding-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #stats-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: rgba(0, 200, 255, 0.5);
+            letter-spacing: 1px;
+        }
+
+        .stat-item { display: flex; gap: 4px; align-items: center; }
+        .stat-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); opacity: 0.6; }
+
+        #action-bar {
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            min-height: 14px;
+            text-align: center;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            transition: color 0.3s;
+        }
+
+        /* Voice visualizer bars */
+        #voice-viz {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            height: 18px;
+        }
+
+        .viz-bar {
+            width: 2px;
+            background: var(--cyan);
+            border-radius: 1px;
+            transition: height 0.1s;
+            opacity: 0.7;
+        }
+
+        /* Scan line animation */
+        #scanline {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            opacity: 0.15;
+            animation: scan 4s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scan {
+            0%   { top: 0; }
+            100% { top: 100vh; }
+        }
+
+        /* Corner decorations */
+        .corner {
+            position: fixed;
+            width: 16px;
+            height: 16px;
+            opacity: 0.4;
+        }
+        .corner.tl { top: 6px; left: 6px; border-top: 1.5px solid var(--cyan); border-left: 1.5px solid var(--cyan); }
+        .corner.tr { top: 6px; right: 6px; border-top: 1.5px solid var(--cyan); border-right: 1.5px solid var(--cyan); }
+        .corner.bl { bottom: 6px; left: 6px; border-bottom: 1.5px solid var(--cyan); border-left: 1.5px solid var(--cyan); }
+        .corner.br { bottom: 6px; right: 6px; border-bottom: 1.5px solid var(--cyan); border-right: 1.5px solid var(--cyan); }
     </style>
     <script src="three.min.js"></script>
 </head>
 <body>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div id="scanline"></div>
+
+    <div id="hud-root">
+        <!-- TOP BAR -->
+        <div id="top-bar">
+            <div id="title">J.A.R.V.I.S v2.0</div>
+            <div id="clock">--:--:--</div>
+        </div>
+
+        <!-- MIDDLE: 3D CORE + AGENT STRIP -->
+        <div id="core-section">
+            <div id="status-ring">
+                <!-- Three.js renders here -->
+            </div>
+            <div id="state-label">STANDBY</div>
+
+            <div id="agent-strip">
+                <div class="agent-pill" data-agent="automation">⚡ AUTO</div>
+                <div class="agent-pill" data-agent="developer">💻 DEV</div>
+                <div class="agent-pill" data-agent="research">🔍 RESEARCH</div>
+                <div class="agent-pill" data-agent="system">🖥️ SYS</div>
+                <div class="agent-pill" data-agent="executive">📋 EXEC</div>
+                <div class="agent-pill" data-agent="creative">🎨 CREATIVE</div>
+            </div>
+
+            <!-- Voice visualizer -->
+            <div id="voice-viz" style="margin-top: 10px;">
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+                <div class="viz-bar" style="height:4px"></div>
+            </div>
+        </div>
+
+        <!-- BOTTOM: STATS + ACTION -->
+        <div id="bottom-section">
+            <div id="stats-row">
+                <div class="stat-item"><div class="stat-dot"></div><span id="mem-stat">MEM: --</span></div>
+                <div class="stat-item"><div class="stat-dot"></div><span id="task-stat">TASKS: --</span></div>
+                <div class="stat-item"><div class="stat-dot"></div><span id="agent-stat">AGENT: --</span></div>
+            </div>
+            <div id="action-bar">INITIALIZING SYSTEMS...</div>
+        </div>
+    </div>
+
     <script>
+        // ── THREE.JS CORE ──
+        const container = document.getElementById('status-ring');
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        renderer.setSize(240, 240);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
 
         const coreGroup = new THREE.Group();
         scene.add(coreGroup);
 
-        // 1. Central Stable Core (Icosahedron)
-        const coreGeo = new THREE.IcosahedronGeometry(1.2, 1);
+        // Central Icosahedron
+        const coreGeo = new THREE.IcosahedronGeometry(1.1, 1);
         const coreMat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, wireframe: true, transparent: true, opacity: 0.6 });
         const core = new THREE.Mesh(coreGeo, coreMat);
         coreGroup.add(core);
 
-        // 2. Inner Smooth Orbiting Ring
-        const ring1Geo = new THREE.TorusGeometry(1.7, 0.02, 16, 100);
-        const ring1Mat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, transparent: true, opacity: 0.8 });
-        const ring1 = new THREE.Mesh(ring1Geo, ring1Mat);
+        // Inner ring
+        const ring1 = new THREE.Mesh(
+            new THREE.TorusGeometry(1.55, 0.018, 16, 100),
+            new THREE.MeshBasicMaterial({ color: 0x00c8ff, transparent: true, opacity: 0.8 })
+        );
         coreGroup.add(ring1);
 
-        // 3. Outer Complex Segmented Ring
-        const ring2Geo = new THREE.TorusGeometry(2.2, 0.06, 4, 60);
-        const ring2Mat = new THREE.MeshBasicMaterial({ color: 0x00c8ff, wireframe: true, transparent: true, opacity: 0.4 });
-        const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+        // Outer segmented ring
+        const ring2 = new THREE.Mesh(
+            new THREE.TorusGeometry(2.0, 0.05, 4, 60),
+            new THREE.MeshBasicMaterial({ color: 0x00c8ff, wireframe: true, transparent: true, opacity: 0.4 })
+        );
         coreGroup.add(ring2);
 
-        // 4. Background Floating Data Particles
-        const particleGeo = new THREE.BufferGeometry();
-        const particleCount = 300;
-        const posArray = new Float32Array(particleCount * 3);
-        for(let i=0; i<particleCount*3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 10;
-        }
-        particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        const particleMat = new THREE.PointsMaterial({ size: 0.04, color: 0x00c8ff, transparent: true, opacity: 0.5 });
-        const particles = new THREE.Points(particleGeo, particleMat);
+        // Third diagonal ring
+        const ring3 = new THREE.Mesh(
+            new THREE.TorusGeometry(1.75, 0.012, 8, 80),
+            new THREE.MeshBasicMaterial({ color: 0x00c8ff, transparent: true, opacity: 0.35 })
+        );
+        ring3.rotation.x = Math.PI / 3;
+        coreGroup.add(ring3);
+
+        // Particles
+        const pGeo = new THREE.BufferGeometry();
+        const pCount = 200;
+        const pPos = new Float32Array(pCount * 3);
+        for (let i = 0; i < pCount * 3; i++) pPos[i] = (Math.random() - 0.5) * 8;
+        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 0.035, color: 0x00c8ff, transparent: true, opacity: 0.4 }));
         scene.add(particles);
 
-        camera.position.z = 5;
+        camera.position.z = 4.5;
 
-        // --- ANIMATION & STATE LOGIC ---
-        let isProcessing = false;
-        let baseSpeed = 0.002;
-        let currentSpeed = baseSpeed;
-        let targetSpeed = baseSpeed;
-
-        // Python will call this function automatically!
-        window.setJarvisState = function(state) {
-            if(state === "LISTENING" || state === "THINKING" || state === "EXECUTING" || state === "RESPONDING") {
-                isProcessing = true;
-                targetSpeed = 0.015; // Smoothly speed up the rings
-                
-                // Change Colors based on state
-                if(state === "LISTENING") coreMat.color.setHex(0xff007f); // Neon Pink
-                else if(state === "RESPONDING") coreMat.color.setHex(0x39ff14); // Neon Green
-                else coreMat.color.setHex(0xffd700); // Gold for thinking/executing
-                
-                ring1Mat.color = coreMat.color;
-                ring2Mat.color = coreMat.color;
-            } else {
-                isProcessing = false;
-                targetSpeed = baseSpeed; // Slow back down to idle
-                coreMat.color.setHex(0x00c8ff); // Back to Cyan
-                ring1Mat.color.setHex(0x00c8ff);
-                ring2Mat.color.setHex(0x00c8ff);
-            }
+        // ── STATE MACHINE ──
+        const COLORS = {
+            IDLE:       { hex: 0x00c8ff, css: '#00c8ff' },   // cyan
+            LISTENING:  { hex: 0xff007f, css: '#ff007f' },   // pink
+            THINKING:   { hex: 0xffd700, css: '#ffd700' },   // gold
+            EXECUTING:  { hex: 0xbf5fff, css: '#bf5fff' },   // purple
+            RESPONDING: { hex: 0x39ff14, css: '#39ff14' },   // green
+            ERROR:      { hex: 0xff3300, css: '#ff3300' },   // red
         };
 
+        let currentState = 'IDLE';
+        let baseSpeed = 0.002;
+        let targetSpeed = baseSpeed;
+        let currentSpeed = baseSpeed;
         let time = 0;
+
+        function applyColor(colorObj) {
+            coreMat.color.setHex(colorObj.hex);
+            ring1.material.color.setHex(colorObj.hex);
+            ring2.material.color.setHex(colorObj.hex);
+            ring3.material.color.setHex(colorObj.hex);
+            particles.material.color.setHex(colorObj.hex);
+        }
+
+        window.setJarvisState = function(state) {
+            const s = state.toUpperCase();
+            currentState = s;
+            
+            const label = document.getElementById('state-label');
+
+            if (s === 'LISTENING') {
+                applyColor(COLORS.LISTENING);
+                targetSpeed = 0.012;
+                label.style.color = COLORS.LISTENING.css;
+                label.style.textShadow = `0 0 8px ${COLORS.LISTENING.css}`;
+            } else if (s === 'THINKING') {
+                applyColor(COLORS.THINKING);
+                targetSpeed = 0.018;
+                label.style.color = COLORS.THINKING.css;
+                label.style.textShadow = `0 0 8px ${COLORS.THINKING.css}`;
+            } else if (s === 'EXECUTING') {
+                applyColor(COLORS.EXECUTING);
+                targetSpeed = 0.022;
+                label.style.color = COLORS.EXECUTING.css;
+                label.style.textShadow = `0 0 8px ${COLORS.EXECUTING.css}`;
+            } else if (s === 'RESPONDING') {
+                applyColor(COLORS.RESPONDING);
+                targetSpeed = 0.01;
+                label.style.color = COLORS.RESPONDING.css;
+                label.style.textShadow = `0 0 8px ${COLORS.RESPONDING.css}`;
+            } else if (s === 'ERROR') {
+                applyColor(COLORS.ERROR);
+                targetSpeed = 0.025;
+                label.style.color = COLORS.ERROR.css;
+                label.style.textShadow = `0 0 8px ${COLORS.ERROR.css}`;
+            } else {
+                // STANDBY / ONLINE / IDLE
+                applyColor(COLORS.IDLE);
+                targetSpeed = baseSpeed;
+                label.style.color = '#00c8ff';
+                label.style.textShadow = '0 0 8px #00c8ff';
+            }
+            
+            // Update state label (strip extra words)
+            const display = s.replace('ONLINE', 'ONLINE').replace('STANDBY', 'STANDBY');
+            label.textContent = display;
+        };
+
+        // Activate agent pill
+        window.setActiveAgent = function(agentName) {
+            const agentColors = {
+                automation: '',
+                developer: 'green',
+                research: 'gold',
+                system: 'cyan',
+                executive: 'pink',
+                creative: 'purple'
+            };
+            
+            document.querySelectorAll('.agent-pill').forEach(p => {
+                p.classList.remove('active', 'pink', 'green', 'gold', 'purple');
+            });
+            
+            const pill = document.querySelector(`[data-agent="${agentName}"]`);
+            if (pill) {
+                pill.classList.add('active');
+                const colorClass = agentColors[agentName];
+                if (colorClass) pill.classList.add(colorClass);
+            }
+            
+            document.getElementById('agent-stat').textContent = `AGENT: ${agentName.toUpperCase()}`;
+        };
+
+        // Update stats
+        window.updateStats = function(memCount, taskCount) {
+            document.getElementById('mem-stat').textContent = `MEM: ${memCount}`;
+            document.getElementById('task-stat').textContent = `TASKS: ${taskCount}`;
+        };
+
+        // ── ANIMATION LOOP ──
+        const vizBars = document.querySelectorAll('.viz-bar');
+        
         function animate() {
             requestAnimationFrame(animate);
             time += 0.05;
+            currentSpeed += (targetSpeed - currentSpeed) * 0.04;
 
-            // Smoothly interpolate speed so it ramps up/down elegantly
-            currentSpeed += (targetSpeed - currentSpeed) * 0.05;
-
-            // Apply rotation across multiple axes
             core.rotation.x += currentSpeed * 0.8;
             core.rotation.y += currentSpeed * 1.2;
-            
             ring1.rotation.x -= currentSpeed * 0.9;
             ring1.rotation.y += currentSpeed * 0.5;
-
             ring2.rotation.x += currentSpeed * 0.6;
             ring2.rotation.y -= currentSpeed * 1.1;
             ring2.rotation.z += currentSpeed * 0.3;
+            ring3.rotation.y += currentSpeed * 0.7;
+            ring3.rotation.z -= currentSpeed * 0.4;
+            particles.rotation.y += currentSpeed * 0.15;
 
-            particles.rotation.y += currentSpeed * 0.2;
-
-            // Pulse the brightness/opacity when active instead of scaling
-            if (isProcessing) {
-                coreMat.opacity = 0.5 + Math.sin(time * 4) * 0.4; 
+            // Core pulse
+            const isActive = ['LISTENING', 'THINKING', 'EXECUTING', 'RESPONDING'].includes(currentState);
+            if (isActive) {
+                coreMat.opacity = 0.45 + Math.sin(time * 4) * 0.35;
             } else {
-                coreMat.opacity = 0.6;
+                coreMat.opacity = 0.6 + Math.sin(time * 0.8) * 0.1;
             }
+
+            // Voice visualizer animation
+            vizBars.forEach((bar, i) => {
+                let h;
+                if (currentState === 'LISTENING') {
+                    h = 4 + Math.abs(Math.sin(time * 3 + i * 0.6)) * 14;
+                } else if (currentState === 'RESPONDING') {
+                    h = 4 + Math.abs(Math.sin(time * 5 + i * 0.8)) * 10;
+                } else if (isActive) {
+                    h = 4 + Math.abs(Math.sin(time * 2 + i * 0.4)) * 6;
+                } else {
+                    h = 3 + Math.abs(Math.sin(time * 0.5 + i * 0.3)) * 2;
+                }
+                bar.style.height = h + 'px';
+            });
 
             renderer.render(scene, camera);
         }
         animate();
-        
-        // Keep it responsive
-        window.addEventListener('resize', () => {
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-        });
+
+        // ── CLOCK ──
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
     </script>
 </body>
 </html>

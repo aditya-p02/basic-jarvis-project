@@ -13,15 +13,31 @@ class CodeExecutor:
     def execute(self, python_code):
         # Block dangerous patterns before exec runs
         banned = [
-            "import os", "import sys", "import subprocess",
-            "import shutil", "open(",
-            "eval(", "compile(", "exec(",
-            "os.system", "os.remove", "os.rmdir",
-            "shutil.rmtree", "subprocess", "socket",
-        ]
+    "import os",
+    "import sys",
+    "import subprocess",
+    "import shutil",
+    "os.system",
+    "os.remove",
+    "os.rmdir",
+    "os.unlink",
+    "shutil.rmtree",
+    "subprocess.run",
+    "subprocess.call",
+    "subprocess.Popen",
+    "eval(",
+    "compile(",
+    "socket.socket",
+]
         for pattern in banned:
             if pattern in python_code:
                 return f"Blocked: forbidden pattern '{pattern}' detected in generated code."
+
+        # Strip import lines — these modules are already injected via safe_globals
+        cleaned_code = "\n".join(
+            line for line in python_code.splitlines()
+            if not line.strip().startswith("import ") and not line.strip().startswith("from ")
+        )
 
         stdout_buffer = io.StringIO()
         with contextlib.redirect_stdout(stdout_buffer):
@@ -46,7 +62,7 @@ class CodeExecutor:
                     "automator": self.automator,
                     "webbrowser": webbrowser,
                 }
-                exec(python_code, safe_globals)
+                exec(cleaned_code, safe_globals)
             except Exception as e:
                 print(f"Execution Error: {e}")
         return stdout_buffer.getvalue()
