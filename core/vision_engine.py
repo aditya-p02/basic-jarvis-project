@@ -30,14 +30,22 @@ class VisionEngine(QThread):
         self.scroll_prev_y = None
         self.drag_cooldown = 0
         self.prev_pinky_only = False
-        self.prev_three_fingers = False
         self.prev_index_pinky = False
+        
+        # Cooldown for left click so it doesn't spam
+        self.last_left_click_time = 0 
+
+        # --- CLOSED FIST DRAG STATE ---
+        self.fist_hold_start = None
+        self.FIST_CONFIRM_SECONDS = 0.18   
+        self.fist_release_frames = 0        
+        self.FIST_RELEASE_DEBOUNCE = 6      
 
         # Palm unlock state
         self.gestures_active = False
         self.palm_hold_start = None
-        self.hand_lost_time = None        # when hand left the frame
-        self.HAND_TIMEOUT = 10.0          # seconds to keep gestures on after hand leaves
+        self.hand_lost_time = None        
+        self.HAND_TIMEOUT = 10.0          
 
         model_path = 'hand_landmarker.task'
         self.options = HandLandmarkerOptions(
@@ -71,31 +79,23 @@ class VisionEngine(QThread):
                 # HAND PRESENCE LOGIC
                 # ==========================================
                 if hand_detected:
-                    # Hand is visible — reset the lost timer
                     self.hand_lost_time = None
-
                 else:
-                    # No hand in frame
                     if self.gestures_active:
                         if self.hand_lost_time is None:
-                            # Hand just left — start the countdown
                             self.hand_lost_time = time.time()
                         else:
                             gone_for = time.time() - self.hand_lost_time
                             remaining = self.HAND_TIMEOUT - gone_for
                             if remaining > 0:
-                                # Still within timeout — show countdown
                                 self.gesture_signal.emit(f"HAND AWAY: {int(remaining) + 1}s")
                             else:
-                                # Timeout expired — turn gestures off
                                 self.gestures_active = False
                                 self.hand_lost_time = None
                                 self.palm_hold_start = None
                                 self.gesture_signal.emit("GESTURES OFF")
-                    # No hand + gestures already off = do nothing
                     continue
 
-                # From here down, hand IS detected
                 for hand_landmarks in detection_result.hand_landmarks:
                     thumb_tip = hand_landmarks[4]
                     index_tip = hand_landmarks[8]
@@ -118,7 +118,6 @@ class VisionEngine(QThread):
 
                     # ==========================================
                     # PALM HOLD TO ACTIVATE (5 seconds)
-                    # Only checked when gestures are OFF
                     # ==========================================
                     if not self.gestures_active:
                         all_up = index_up and middle_up and ring_up and pinky_up
@@ -137,12 +136,7 @@ class VisionEngine(QThread):
                                     self.gesture_signal.emit("GESTURES ON")
                         else:
                             self.palm_hold_start = None
-                        # Don't process any gestures while locked
                         continue
-
-                    # ==========================================
-                    # GESTURES ARE ACTIVE FROM HERE DOWN
-                    # ==========================================
 
                     # ==========================================
                     # 1. THE KNUCKLE ANCHOR CURSOR
@@ -167,33 +161,64 @@ class VisionEngine(QThread):
                     # 2. UPGRADED MACROS & GESTURES
                     # ==========================================
 
-                    # --- BULLETPROOF DRAG & DROP ---
-                    dist_thumb_index = math.hypot(index_tip.x - thumb_tip.x, index_tip.y - thumb_tip.y)
+                    # ==========================================
+                    # CLOSED FIST DRAG & DROP
+                    # ==========================================
+                    index_mcp = hand_landmarks[5]
+                    middle_mcp = hand_landmarks[9]
+                    ring_mcp   = hand_landmarks[13]
+                    pinky_mcp  = hand_landmarks[17]
 
-                    if self.drag_cooldown > 0:
-                        self.drag_cooldown -= 1
+                    index_curled  = index_tip.y  > index_mcp.y
+                    middle_curled = middle_tip.y > middle_mcp.y
+                    ring_curled   = ring_tip.y   > ring_mcp.y
+                    pinky_curled  = pinky_tip.y  > pinky_mcp.y
+
+                    is_fist = index_curled and middle_curled and ring_curled and pinky_curled
 
                     if not self.drag_active:
-                        if dist_thumb_index < 0.05:
-                            pyautogui.mouseDown(_pause=False)
-                            self.drag_active = True
-                            self.drag_cooldown = 5
-                            self.gesture_signal.emit("DRAG ENGAGED")
+                        if is_fist:
+                            if self.fist_hold_start is None:
+                                self.fist_hold_start = time.time()
+                            elif time.time() - self.fist_hold_start >= self.FIST_CONFIRM_SECONDS:
+                                pyautogui.mouseDown(_pause=False)
+                                self.drag_active = True
+                                self.fist_hold_start = None
+                                self.fist_release_frames = 0
+                                self.gesture_signal.emit(" GRAB — DRAG ENGAGED")
+                        else:
+                            self.fist_hold_start = None
                     else:
-                        if dist_thumb_index > 0.06 and self.drag_cooldown == 0:
-                            pyautogui.mouseUp(_pause=False)
-                            self.drag_active = False
-                            self.gesture_signal.emit("DRAG RELEASED")
+                        if is_fist:
+                            self.fist_release_frames = 0
+                        else:
+                            self.fist_release_frames += 1
+                            if self.fist_release_frames >= self.FIST_RELEASE_DEBOUNCE:
+                                pyautogui.mouseUp(_pause=False)
+                                self.drag_active = False
+                                self.fist_hold_start = None
+                                self.fist_release_frames = 0
+                                self.gesture_signal.emit(" RELEASE — DRAG DROPPED")
 
-                    # --- RIGHT CLICK ---
+                    # --- LEFT CLICK (thumb + index pinch) ---
+                    # Only fires when NOT dragging and hand is not in a fist
+                    dist_thumb_index = math.hypot(index_tip.x - thumb_tip.x, index_tip.y - thumb_tip.y)
+                    if dist_thumb_index < 0.04 and not self.drag_active and not is_fist:
+                        current_time = time.time()
+                        if current_time - self.last_left_click_time > 0.4:
+                            pyautogui.click(_pause=False)
+                            self.gesture_signal.emit("LEFT CLICK")
+                            self.last_left_click_time = current_time
+
+                    # --- RIGHT CLICK (thumb + middle pinch, index finger up) ---
                     dist_thumb_middle = math.hypot(middle_tip.x - thumb_tip.x, middle_tip.y - thumb_tip.y)
-                    if dist_thumb_middle < 0.04 and index_up and not self.drag_active:
+                    if dist_thumb_middle < 0.04 and index_up and not self.drag_active and not is_fist:
                         pyautogui.rightClick(_pause=False)
                         self.gesture_signal.emit("RIGHT CLICK")
                         pyautogui.sleep(0.4)
 
-                    # --- INDEPENDENT SCROLL ---
-                    elif index_up and middle_up and not ring_up and not pinky_up:
+                    # --- INDEPENDENT SCROLL (2 fingers up, no fist, no drag) ---
+                    elif index_up and middle_up and not ring_up and not pinky_up and not self.drag_active and not is_fist:
                         if self.scroll_prev_y is None:
                             self.scroll_prev_y = scaled_y
                         else:
@@ -209,8 +234,8 @@ class VisionEngine(QThread):
                     else:
                         self.scroll_prev_y = None
 
-                    # --- ACCUMULATIVE SWIPE ---
-                    if index_up and middle_up and ring_up and pinky_up:
+                    # --- ACCUMULATIVE SWIPE (all 4 fingers up, open palm, no drag) ---
+                    if index_up and middle_up and ring_up and pinky_up and not self.drag_active and not is_fist:
                         current_time = time.time()
 
                         if self.swipe_start_x is None:
@@ -240,23 +265,17 @@ class VisionEngine(QThread):
 
                         # --- MISC MACROS ---
                         pinky_only = pinky_up and not index_up and not middle_up and not ring_up
-                        three_fingers = index_up and middle_up and ring_up and not pinky_up
                         index_pinky = index_up and pinky_up and not middle_up and not ring_up
 
                         if pinky_only and not self.prev_pinky_only:
                             pyautogui.hotkey('alt', 'tab')
                             self.gesture_signal.emit("SWITCH WINDOW")
 
-                        elif three_fingers and not self.prev_three_fingers:
-                            pyautogui.hotkey('win', 'd')
-                            self.gesture_signal.emit("SHOW DESKTOP")
-
                         elif index_pinky and not self.prev_index_pinky:
                             pyautogui.hotkey('ctrl', 'w')
                             self.gesture_signal.emit("CLOSE ACTIVE TAB")
 
                         self.prev_pinky_only = pinky_only
-                        self.prev_three_fingers = three_fingers
                         self.prev_index_pinky = index_pinky
 
         cap.release()
